@@ -17,7 +17,7 @@ export class ManagementController {
   })
   info(): any {
     return {
-      activeProfiles: 'dev',
+      activeProfiles: 'dev,api-docs',
       'display-ribbon-on-profiles': 'dev',
     };
   }

@@ -13,5 +13,8 @@ export function setupSwagger(app: INestApplication): any {
     .build();
   const document = SwaggerModule.createDocument(app, options);
   SwaggerModule.setup(swaggerEndpoint, app, document);
+  app.getHttpAdapter().get('/v3/api-docs', (req, res) => {
+    res.type('application/json').send(document);
+  });
   logger.log(`Added swagger on endpoint ${swaggerEndpoint}`);
 }

@@ -2,7 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import yaml from 'js-yaml';
 import { Logger } from '@nestjs/common';
+import * as dotenv from 'dotenv';
 
+const envPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: envPath });
 const logger = new Logger('Config');
 
 export class Config {
@@ -21,29 +24,35 @@ export class Config {
   'jhipster.swagger.description' = 'gateway API documentation';
   'jhipster.swagger.version' = '0.0.1';
   'jhipster.swagger.path' = '/api/v2/api-docs';
-  'eureka.client.enabled' = true;
-  'eureka.client.healthcheck.enabled' = true;
-  'eureka.client.fetch-registry' = true;
-  'eureka.client.register-with-eureka' = true;
-  'eureka.client.instance-info-replication-interval-seconds' = 10;
-  'eureka.client.registry-fetch-interval-seconds' = 10;
-  'eureka.instance.appname' = 'gateway';
-  'eureka.instance.instanceId' = 'gateway:${random.value}';
-  'eureka.instance.lease-renewal-interval-in-seconds' = 5;
-  'eureka.instance.lease-expiration-duration-in-seconds' = 10;
-  'eureka.instance.status-page-url-path' = '${management.endpoints.web.base-path}/info';
-  'eureka.instance.health-check-url-path' = '${management.endpoints.web.base-path}/health';
-  'eureka.instance.metadata-map.zone' = 'primary';
-  // 'eureka.instance.metadata-map.profile' = '${profiles.active}';
-  'eureka.instance.metadata-map.git-version' = '${git.commit.id.describe:}';
-  'eureka.instance.metadata-map.git-commit' = '${git.commit.id.abbrev:}';
-  'eureka.instance.metadata-map.git-branch' = '${git.branch:}';
-  'eureka.instance.prefer-ip-address' = true;
-  'eureka.client.service-url.defaultZone' = 'http://admin:${jhipster.registry.password}@localhost:8761/eureka/';
-  'cloud.config.uri' = 'http://admin:${jhipster.registry.password}@localhost:8761/config';
+  'consul.enabled' = true;
+  'consul.host' = 'consul.appf4s.io.vn';
+  'consul.port' = 443;
+  'consul.scheme' = 'https';
+  'consul.service-name' = 'gateway';
+  'consul.service-id' = 'gateway:${random.value}';
+  'consul.health-check-interval' = '10s';
+  'consul.health-check-timeout' = '5s';
+  'consul.health-check-deregister-critical-service-after' = '30s';
+  'consul.prefer-ip-address' = true;
+  'consul.metadata-map.zone' = 'primary';
+  'consul.metadata-map.git-version' = '${git.commit.id.describe:}';
+  'consul.metadata-map.git-commit' = '${git.commit.id.abbrev:}';
+  'consul.metadata-map.git-branch' = '${git.branch:}';
+  'cloud.config.uri' = 'https://consul.appf4s.io.vn:443/v1/kv';
   'cloud.config.name' = 'gateway';
   'cloud.config.profile' = 'prod';
   'cloud.config.label' = 'master';
+  'vault.enabled' = true;
+  'vault.uri' = 'http://appf4s.io.vn:8200';
+  'vault.token' = 'f4security';
+  'vault.scheme' = 'http';
+  'vault.kv.enabled' = true;
+  'vault.kv.backend' = 'secret';
+  'vault.kv.application-name' = 'common-kafka';
+  'vault.configuration.infrastructure' = 'secret/infrastructure';
+  'vault.service-registration.enabled' = true;
+  'vault.service-registration.service-name' = 'gateway';
+  'vault.service-registration.service-id' = 'gateway:${random.value}';
 
   constructor(properties) {
     this.addAll(properties);
@@ -77,12 +86,19 @@ export class Config {
     }
   }
 
-  private processTemplate(template, variables): any {
-    // console.log(template);
-    if (typeof template === 'string') {
-      return template.replace(new RegExp('\\${[^{]+}', 'g'), name => variables[name.substring(2, name.length - 1)]);
-    }
-    return template;
+  private processTemplate(template: any, variables: Record<string, any>): any {
+    if (typeof template !== 'string') return template;
+
+    return template.replace(/\${([^}]+)}/g, (_match, inside) => {
+      // Support "NAME:default" or just "NAME"
+      const [rawName, ...rest] = String(inside).split(':');
+      const name = rawName?.trim();
+      const def = rest.length ? rest.join(':').trim() : undefined;
+
+      // Look up order: variables -> process.env -> default -> empty string
+      const val = variables[name] ?? process.env[name] ?? def ?? '';
+      return String(val);
+    });
   }
 }
 

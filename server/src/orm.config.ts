@@ -11,47 +11,58 @@ function ormConfig(): TypeOrmModuleOptions {
   if (process.env.BACKEND_ENV === 'prod') {
     ormconfig = {
       name: 'default',
-      type: 'postgres',
-      // typeorm fails to auto load driver due to workspaces resolution
-      driver: require('pg'),
-      database: 'gateway',
-      host: 'postgresql',
-      // port: ,
-      username: 'gateway',
-      password: '',
+      type: 'mysql',
+      // explicitly load driver to work in monorepo / workspace
+      driver: require('mysql2'),
+      host: 'sql.microservices.appf4s.io.vn', // your container/service hostname
+      port: 3307, // default MySQL port
+      database: 'ms_route', // your DB name
+      username: 'root', // your DB user
+      password: '', // your password
       logging: false,
       // synchronize: false,
     };
   } else if (process.env.BACKEND_ENV === 'test') {
     ormconfig = {
       name: 'default',
-      type: 'sqlite',
-      // typeorm fails to auto load driver due to workspaces resolution
-      driver: require('sqlite3'),
-      database: ':memory:',
-      logging: true,
+      type: 'mysql',
+      // explicitly load driver to work in monorepo / workspace
+      driver: require('mysql2'),
+      host: 'sql.microservices.appf4s.io.vn', // your container/service hostname
+      port: 3307, // default MySQL port
+      database: 'ms_route', // your DB name
+      username: 'root', // your DB user
+      password: '', // your password
+      logging: false,
+      // synchronize: false,
     };
   } else if (process.env.BACKEND_ENV === 'dev') {
     ormconfig = {
       name: 'default',
-      type: 'postgres',
-      // typeorm fails to auto load driver due to workspaces resolution
-      driver: require('sqlite3'),
-      database: 'gateway',
-      host: '127.0.0.1',
-      // port: ,
-      username: 'gateway',
-      password: '',
+      type: 'mysql',
+      // explicitly load driver to work in monorepo / workspace
+      driver: require('mysql2'),
+      host: 'sql.microservices.appf4s.io.vn', // your container/service hostname
+      port: 3307, // default MySQL port
+      database: 'ms_route', // your DB name
+      username: 'root', // your DB user
+      password: '', // your password
       logging: false,
+      // synchronize: false,
     };
   } else {
     ormconfig = {
       name: 'default',
-      type: 'sqlite',
-      // typeorm fails to auto load driver due to workspaces resolution
-      driver: require('sqlite3'),
-      database: `${__dirname}../../target/db/sqlite-dev-db.sql`,
-      logging: true,
+      type: 'mysql',
+      // explicitly load driver to work in monorepo / workspace
+      driver: require('mysql2'),
+      host: 'sql.microservices.appf4s.io.vn', // your container/service hostname
+      port: 3307, // default MySQL port
+      database: 'ms_route', // your DB name
+      username: 'root', // your DB user
+      password: '', // your password
+      logging: false,
+      // synchronize: false,
     };
   }
 

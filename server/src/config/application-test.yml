@@ -8,34 +8,12 @@
 # ===================================================================
 
 # ===================================================================
-# Standard app properties.
+# Environment-specific overrides
 # ===================================================================
 
-eureka:
-  instance:
-    prefer-ip-address: true
-  client:
-    service-url:
-      defaultZone: http://admin:${jhipster.registry.password}@localhost:8761/eureka/
-
-server:
-  port: 8080
-
-  mail:
-    host: localhost
-    port: 25
-    username:
-    password:
-
-# ===================================================================
-# JHipster specific properties
-#
-# Full reference is available at: https://www.jhipster.tech/common-application-properties/
-# ===================================================================
-
+# Test-specific mail base URL
 jhipster:
-  mail: # specific JHipster mail property, for standard properties see MailProperties
-    from: gateway@localhost
+  mail:
     base-url: http://127.0.0.1:8082
 # ===================================================================
 # Application specific properties

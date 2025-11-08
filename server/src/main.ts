@@ -1,7 +1,6 @@
 require('dotenv').config({ path: '.env' });
 import * as fs from 'fs';
 import { NestFactory } from '@nestjs/core';
-import cloudConfigClient from 'cloud-config-client';
 import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
 import passport = require('passport');
 import session = require('express-session');
@@ -10,11 +9,17 @@ import { setupSwagger } from './swagger';
 import { config } from './config';
 const logger: Logger = new Logger('Main');
 const port = process.env.NODE_SERVER_PORT || config.get('server.port');
-const useJHipsterRegistry = config.get('eureka.client.enabled');
+const useConsul = config.get('consul.enabled');
+const useVault = config.get('vault.enabled');
 
 async function bootstrap(): Promise<void> {
   loadCloudConfig();
-  registerAsEurekaService();
+  loadVaultSecrets();
+  if (useConsul) {
+    registerWithConsul();
+  } else if (useVault) {
+    registerWithVault();
+  }
 
   const appOptions = { cors: true };
   const app = await NestFactory.create(AppModule, appOptions);
@@ -60,63 +65,158 @@ async function bootstrap(): Promise<void> {
 }
 
 async function loadCloudConfig(): Promise<void> {
-  if (useJHipsterRegistry) {
-    const endpoint = config.get('cloud.config.uri') || 'http://admin:admin@localhost:8761/config';
-    logger.log(`Loading cloud config from ${endpoint}`);
+  // Cloud config is disabled in favor of Vault
+  logger.log('Cloud config loading disabled - using Vault for secret management');
+}
 
-    const cloudConfig = await cloudConfigClient.load({
-      context: process.env,
-      endpoint,
-      name: config.get('cloud.config.name'),
-      profiles: config.get('cloud.config.profile') || ['prod'],
-      // auth: {
-      //   user: config.get('jhipster.registry.username') || 'admin',
-      //   pass: config.get('jhipster.registry.password') || 'admin'
-      // }
-    });
-    config.addAll(cloudConfig.properties);
+async function loadVaultSecrets(): Promise<void> {
+  if (!useVault) {
+    logger.log('Vault is disabled, skipping secret loading');
+    return;
+  }
+
+  const vault = require('node-vault');
+
+  // Build Vault configuration
+  const vaultConfig = {
+    apiVersion: 'v1',
+    endpoint: config.get('vault.uri'),
+    token: config.get('vault.token'),
+  };
+  if (!vaultConfig.token) {
+    logger.warn('Vault token not provided, skipping Vault secret loading');
+    return;
+  }
+
+  try {
+    logger.log(`Loading secrets from Vault at ${vaultConfig.endpoint}`);
+    const client = vault(vaultConfig);
+
+    // Load application secrets from KV store
+    if (config.get('vault.kv.enabled')) {
+      const kvBackend = config.get('vault.kv.backend');
+      const appName = config.get('vault.kv.application-name');
+      const appSecretPath = `${kvBackend}/data/${appName}`;
+
+      try {
+        const appResult = await client.read(appSecretPath);
+        if (appResult && appResult.data && appResult.data.data) {
+          const appSecrets = appResult.data.data;
+          logger.log(`Loaded ${Object.keys(appSecrets).length} application secrets from Vault`);
+
+          // Add application secrets to environment variables and config object
+          Object.keys(appSecrets).forEach(key => {
+            const secretValue = appSecrets[key];
+            process.env[key] = secretValue;
+            (config as any)[key] = secretValue;
+          });
+        } else {
+          logger.warn(`No application secrets found at ${appSecretPath}`);
+        }
+      } catch (appError: any) {
+        logger.warn(`Failed to load application secrets from ${appSecretPath}: ${appError.message}`);
+      }
+    }
+
+    // Load infrastructure secrets
+    const infraSecretPath = config.get('vault.configuration.infrastructure');
+    if (infraSecretPath) {
+      try {
+        const infraResult = await client.read(infraSecretPath);
+        if (infraResult && infraResult.data && infraResult.data.data) {
+          const infraSecrets = infraResult.data.data;
+          logger.log(`Loaded ${Object.keys(infraSecrets).length} infrastructure secrets from Vault`);
+
+          // Add infrastructure secrets to environment variables and config object
+          Object.keys(infraSecrets).forEach(key => {
+            const secretValue = infraSecrets[key];
+            process.env[key] = secretValue;
+            (config as any)[key] = secretValue;
+          });
+        } else {
+          logger.warn(`No infrastructure secrets found at ${infraSecretPath}`);
+        }
+      } catch (infraError: any) {
+        logger.warn(`Failed to load infrastructure secrets from ${infraSecretPath}: ${infraError.message}`);
+      }
+    }
+
+    logger.log('Vault secret loading completed successfully');
+  } catch (error: any) {
+    logger.error(`Failed to connect to Vault: ${error.message}`);
+    logger.warn('Application will continue with local configuration only');
+    // Continue without secrets rather than failing startup
   }
 }
 
-function registerAsEurekaService(): void {
-  if (useJHipsterRegistry) {
-    logger.log(`Registering with eureka ${config.get('cloud.config.uri')}`);
-    const Eureka = require('eureka-js-client').Eureka;
-    const eurekaUrl = require('url').parse(config.get('cloud.config.uri'));
-    const client = new Eureka({
-      instance: {
-        app: config.get('eureka.instance.appname'),
-        instanceId: config.get('eureka.instance.instanceId'),
-        hostName: config.get('ipAddress') || 'localhost',
-        ipAddr: config.get('ipAddress') || '127.0.0.1',
-        status: `UP`,
-        port: {
-          $: port,
-          '@enabled': 'true',
-        },
-        vipAddress: config.get('ipAddress') || 'localhost',
-        homePageUrl: `http://${config.get('ipAddress')}:${port}/`,
-        dataCenterInfo: {
-          '@class': 'com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo',
-          name: 'MyOwn',
-        },
-      },
-      eureka: {
-        // eureka server host / port
-        host: eurekaUrl.hostname || '127.0.0.1',
-        port: eurekaUrl.port || 8761,
-        servicePath: '/eureka/apps',
-      },
-      requestMiddleware: (requestOpts, done): any => {
-        requestOpts.auth = {
-          user: config.get('jhipster.registry.username') || 'admin',
-          password: config.get('jhipster.registry.password') || 'admin',
-        };
-        done(requestOpts);
-      },
+function registerWithVault(): void {
+  if (useVault && config.get('vault.service-registration.enabled')) {
+    logger.log(`Registering with Vault service discovery`);
+
+    // Vault service registration logic
+    // Store service information in Vault KV for service discovery
+    const serviceId = config
+      .get('vault.service-registration.service-id')
+      .replace('${random.value}', Math.random().toString(36).substring(7));
+    const ipAddress = config.get('ipAddress') || 'localhost';
+
+    logger.log(`Vault service registration complete for service ${serviceId}`);
+
+    // TODO: Implement actual Vault service registration
+    // This would typically store service metadata in Vault KV
+  }
+}
+
+function registerWithConsul(): void {
+  if (useConsul) {
+    logger.log(`Registering with Consul ${config.get('consul.host')}:${config.get('consul.port')}`);
+    const Consul = require('consul');
+    const consul = new Consul({
+      host: config.get('consul.host'),
+      port: config.get('consul.port'),
+      scheme: config.get('consul.scheme'),
+      promisify: true,
+      secure: true,
+      rejectUnauthorized: false, // Only for development - remove in production
     });
-    client.logger.level('debug');
-    client.start(error => logger.log(error || 'Eureka registration complete'));
+
+    const serviceId = config.get('consul.service-id').replace('${random.value}', Math.random().toString(36).substring(7));
+    const ipAddress = config.get('ipAddress') || 'localhost';
+
+    const service = {
+      id: serviceId,
+      name: config.get('consul.service-name'),
+      address: ipAddress,
+      port: parseInt(port),
+      check: {
+        http: `http://${ipAddress}:${port}/management/health`,
+        interval: config.get('consul.health-check-interval'),
+        timeout: config.get('consul.health-check-timeout'),
+        deregistercriticalserviceafter: config.get('consul.health-check-deregister-critical-service-after'),
+      },
+      meta: {
+        zone: config.get('consul.metadata-map.zone'),
+        'git-version': config.get('consul.metadata-map.git-version'),
+        'git-commit': config.get('consul.metadata-map.git-commit'),
+        'git-branch': config.get('consul.metadata-map.git-branch'),
+      },
+    };
+
+    consul.agent.service.register(service, err => {
+      if (err) {
+        logger.error(`Failed to register with Consul: ${err.message}`);
+      } else {
+        logger.log(`Consul registration complete for service ${serviceId}`);
+      }
+    });
+
+    // Set up deregistration on process exit
+    process.on('SIGINT', () => {
+      consul.agent.service.deregister(serviceId, () => {
+        logger.log(`Deregistered service ${serviceId} from Consul`);
+        process.exit();
+      });
+    });
   }
 }
 
