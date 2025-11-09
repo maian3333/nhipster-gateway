@@ -53,6 +53,12 @@ export class Config {
   'vault.service-registration.enabled' = true;
   'vault.service-registration.service-name' = 'gateway';
   'vault.service-registration.service-id' = 'gateway:${random.value}';
+  'sshTunnel.vpsHost' = 'localhost';
+  'sshTunnel.vpsUser' = 'root';
+  'sshTunnel.vpsPassword' = '';
+  'sshTunnel.servicePort' = 8080;
+  'sshTunnel.localPort' = 8080;
+  'sshTunnel.devSuffix' = '-dev';
 
   constructor(properties) {
     this.addAll(properties);
