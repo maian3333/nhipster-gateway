@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '.env' });
+require('dotenv').config({ path: '../../../../.env' });
 
 import * as fs from 'fs';
 import { NestFactory } from '@nestjs/core';
